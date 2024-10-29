@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SOURCE ROI on Corn</title>
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/purecss@3.0.0/build/pure-min.css"
+        integrity="sha384-X38yfunGUhNzHpBaEBsWLO+A0HDYOQi8ufWDkZ0k9e0eXz/tH3II7uKZ9msv++Ls" crossorigin="anonymous">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+
+        #controls {
+            margin-bottom: 30px;
+        }
+
+        .slider-container {
+            margin: 10px 0;
+        }
+
+        .slider-label {
+            margin-right: 15px;
+        }
+
+        #plot {
+            width: 100%;
+            height: 500px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>SOURCE ROI on Corn</h1>
+
+
+    <div id="plot"></div>
+
+
+    <hr style="margin: 2rem;">
+
+    <!-- Sliders -->
+    <div id="controls" class="pure-g">
+
+        <div class="pure-u-1-4 slider-container">
+            <label class="slider-label">Price of corn ($/bu): <span id="price-corn-val">4.1</span></label>
+            <input type="range" id="price-corn" min="3" max="6" value="4.1" step="0.01" oninput="updatePlot()">
+        </div>
+
+        <div class="pure-u-1-4 slider-container">
+            <label class="slider-label">Cost of N ($/lb): <span id="cost-N-val">0.48</span></label>
+            <input type="range" id="cost-N" min="0.2" max="1.0" value="0.48" step="0.01" oninput="updatePlot()">
+        </div>
+
+        <div class="pure-u-1-4 slider-container">
+            <label class="slider-label">Cost of SOURCE ($/ac): <span id="cost-SOURCE-val">15.0</span></label>
+            <input type="range" id="cost-SOURCE" min="5.0" max="20.0" value="15.0" step="0.1" oninput="updatePlot()">
+        </div>
+
+        <div class="pure-u-1-4 slider-container">
+            <label class="slider-label">N Reduction: <span id="n-reduction-val"></span></label>
+            <select id="n-reduction" onchange="updatePlot()">
+                <option value="0">No reduction</option>
+                <option value="25">25 lbs/ac</option>
+                <option value="50">50 lbs/ac</option>
+        </div>
+
+    </div>
+
+
+
+
+    <script>
+
+        function piecewiseSaturationVector(x, intercept, gradient, transitionPoint, saturationRate) {
+            if (x <= transitionPoint) {
+                return intercept + gradient * x;
+            } else {
+                return intercept + gradient * transitionPoint +
+                    (gradient / (-(1 / saturationRate) * Math.log(2))) *
+                    (Math.pow(2, -(1 / saturationRate) * (x - transitionPoint)) - 1);
+            }
+        }
+
+
+        function roiCurve(N, plotParams, userParams, isSourceTreated) {
+            const { intercept, gradient, transitionPoint, saturationRate, sourceNEquivalent } = plotParams;
+            const { NReduction, costN, costSOURCE, priceCorn } = userParams;
+
+            // Actual N : N - NReduction if isSourceTreated
+            let actualN = N.map(x => x - NReduction * isSourceTreated);
+
+            // Effective N : N + SourceNEquivalent if isSourceTreated - NReduction if isSourceTreated
+            let effectiveN = N.map(x => x + sourceNEquivalent * isSourceTreated - NReduction * isSourceTreated);
+
+            // Yield is based on the effective N
+            let expectedYield = effectiveN.map(x => piecewiseSaturationVector(
+                x, intercept, gradient, transitionPoint, saturationRate
+            ));
+
+            // Costs are based on the actual N and Source cost if isSourceTreated
+            let cost = actualN.map(x => costN * x + costSOURCE * isSourceTreated);
+
+            // Revenue is based on the expected yield and corn price
+            let revenue = expectedYield.map(y => y * priceCorn);
+
+            return revenue.map((r, i) => r - cost[i]);
+        }
+
+
+        function findBreakeven(xValues, roiUntreated, roiTreated) {
+            // Find the index where the difference between ROI values is smallest (closest to zero)
+            let differences = roiUntreated.map((roi, i) => Math.abs(roi - roiTreated[i]));
+            let breakevenIndex = differences.indexOf(Math.min(...differences));
+            return xValues[breakevenIndex];  // Return the corresponding N value
+        }
+
+
+        function updatePlot() {
+            const priceCorn = parseFloat(document.getElementById('price-corn').value);
+            const costN = parseFloat(document.getElementById('cost-N').value);
+            const costSOURCE = parseFloat(document.getElementById('cost-SOURCE').value);
+            const NReduction = parseFloat(document.getElementById('n-reduction').value);
+
+            // Update the labels for the slider values
+            document.getElementById('price-corn-val').textContent = priceCorn;
+            document.getElementById('cost-N-val').textContent = costN;
+            document.getElementById('cost-SOURCE-val').textContent = costSOURCE;
+
+            // Plotting parameters
+            const xValues = Array.from({ length: (300 - 100) / 0.5 + 1 }, (_, i) => 100 + i * 0.5);
+
+            const plotParams = {
+                intercept: 72.7,
+                gradient: 1.525,
+                transitionPoint: 39.5,
+                saturationRate: 49.25,
+                sourceNEquivalent: 24.0,
+            };
+            const userParams = {
+                NReduction: NReduction,
+                costN: costN,
+                costSOURCE: costSOURCE,
+                priceCorn: priceCorn,
+            };
+
+            let roiUntreated = roiCurve(xValues, plotParams, userParams, false);
+            let roiTreated = roiCurve(xValues, plotParams, userParams, true);
+
+            // Find breakeven point
+            let breakeven = findBreakeven(xValues, roiUntreated, roiTreated);
+
+            // Ensure the 'plot' div exists before plotting
+            let plotElement = document.getElementById('plot');
+            if (plotElement) {
+                // Use Plotly.react for efficient updates
+                Plotly.react('plot', [
+                    {
+                        x: xValues,
+                        y: roiUntreated,
+                        type: 'scatter',
+                        mode: 'lines',
+                        name: 'Untreated',
+                        line: { color: 'black', width: 3 }
+                    },
+                    {
+                        x: xValues,
+                        y: roiTreated,
+                        type: 'scatter',
+                        mode: 'lines',
+                        name: 'With SOURCE',
+                        line: { color: 'blue', width: 3 }
+                    },
+                    {
+                        x: [breakeven, breakeven],
+                        y: [Math.min(...roiUntreated), Math.max(...roiTreated)],
+                        type: 'scatter',
+                        mode: 'lines',
+                        name: 'Break-even',
+                        line: { color: 'black', dash: 'dash' }
+                    }
+                ], {
+                    title: `ROI Curve (break-even at ${breakeven.toFixed(1)} N/ac)`,
+                    xaxis: { title: 'Applied N (lb/ac)' },
+                    yaxis: { title: 'ROI ($/ac)' },
+                    legend: { orientation: 'h' }
+                });
+            } else {
+                console.error("No DOM element with id 'plot' exists on the page.");
+            }
+        }
+
+        // Ensure the page is fully loaded before rendering
+        window.onload = function () {
+            const plotElement = document.getElementById('plot');
+
+            // Only proceed if the plot element exists
+            if (plotElement) {
+                updatePlot();
+            } else {
+                console.error("Plot element not found on page load.");
+            }
+        };
+
+    </script>
+
+</body>
+
+</html>
