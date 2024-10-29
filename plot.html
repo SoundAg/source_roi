@@ -39,6 +39,12 @@
 
     <h1>SOURCE ROI on Corn</h1>
 
+    <div>
+        <p>This plot shows the estimated partial ROI against the amount of applied N.</p>
+        <p>The black line shows a full-nitrogen regimen, without SOURCE. The green line shows </p>
+        <p>You can change the parameters of the plot below.</p>
+    </div>
+
 
     <div id="plot"></div>
 
@@ -89,7 +95,7 @@
         }
 
 
-        function roiCurve(N, plotParams, userParams, isSourceTreated) {
+        function calculateROI(N, plotParams, userParams, isSourceTreated) {
             const { intercept, gradient, transitionPoint, saturationRate, sourceNEquivalent } = plotParams;
             const { NReduction, costN, costSOURCE, priceCorn } = userParams;
 
@@ -104,13 +110,22 @@
                 x, intercept, gradient, transitionPoint, saturationRate
             ));
 
-            // Costs are based on the actual N and Source cost if isSourceTreated
-            let cost = actualN.map(x => costN * x + costSOURCE * isSourceTreated);
-
-            // Revenue is based on the expected yield and corn price
+            // Costs and revenue
+            let costAppliedN = actualN.map(x => costN * x);
+            let costAppliedSource = Array(N.length).fill(costSOURCE * isSourceTreated);
+            let costTotal = costAppliedN.map((x, i) => x + costAppliedSource[i]);
             let revenue = expectedYield.map(y => y * priceCorn);
+            let roi = revenue.map((r, i) => r - costTotal[i]);
 
-            return revenue.map((r, i) => r - cost[i]);
+            let results = {
+                costAppliedN: costAppliedN,
+                costAppliedSource: costAppliedSource,
+                costTotal: costTotal,
+                revenue: revenue,
+                roi: roi,
+            }
+
+            return results;
         }
 
 
@@ -121,6 +136,16 @@
             return xValues[breakevenIndex];  // Return the corresponding N value
         }
 
+
+        // Static plotting data
+        const xValues = Array.from({ length: (300 - 100) / 0.5 + 1 }, (_, i) => 100 + i * 0.5);
+        const plotParams = {
+                intercept: 72.7,
+                gradient: 1.525,
+                transitionPoint: 39.5,
+                saturationRate: 49.25,
+                sourceNEquivalent: 24.0,
+            };
 
         function updatePlot() {
             const priceCorn = parseFloat(document.getElementById('price-corn').value);
@@ -134,15 +159,6 @@
             document.getElementById('cost-SOURCE-val').textContent = costSOURCE;
 
             // Plotting parameters
-            const xValues = Array.from({ length: (300 - 100) / 0.5 + 1 }, (_, i) => 100 + i * 0.5);
-
-            const plotParams = {
-                intercept: 72.7,
-                gradient: 1.525,
-                transitionPoint: 39.5,
-                saturationRate: 49.25,
-                sourceNEquivalent: 24.0,
-            };
             const userParams = {
                 NReduction: NReduction,
                 costN: costN,
@@ -150,51 +166,151 @@
                 priceCorn: priceCorn,
             };
 
-            let roiUntreated = roiCurve(xValues, plotParams, userParams, false);
-            let roiTreated = roiCurve(xValues, plotParams, userParams, true);
+            // Calculate graph basics for the untreated field areas
+            let Untreated = calculateROI(xValues, plotParams, userParams, false);
+            let Treated = calculateROI(xValues, plotParams, userParams, true);
 
             // Find breakeven point
-            let breakeven = findBreakeven(xValues, roiUntreated, roiTreated);
+            let breakeven = findBreakeven(xValues, Untreated.roi, Treated.roi);
 
-            // Ensure the 'plot' div exists before plotting
-            let plotElement = document.getElementById('plot');
-            if (plotElement) {
-                // Use Plotly.react for efficient updates
-                Plotly.react('plot', [
-                    {
-                        x: xValues,
-                        y: roiUntreated,
-                        type: 'scatter',
-                        mode: 'lines',
-                        name: 'Untreated',
-                        line: { color: 'black', width: 3 }
-                    },
-                    {
-                        x: xValues,
-                        y: roiTreated,
-                        type: 'scatter',
-                        mode: 'lines',
-                        name: 'With SOURCE',
-                        line: { color: 'blue', width: 3 }
-                    },
-                    {
-                        x: [breakeven, breakeven],
-                        y: [Math.min(...roiUntreated), Math.max(...roiTreated)],
-                        type: 'scatter',
-                        mode: 'lines',
-                        name: 'Break-even',
-                        line: { color: 'black', dash: 'dash' }
-                    }
-                ], {
-                    title: `ROI Curve (break-even at ${breakeven.toFixed(1)} N/ac)`,
-                    xaxis: { title: 'Applied N (lb/ac)' },
-                    yaxis: { title: 'ROI ($/ac)' },
-                    legend: { orientation: 'h' }
-                });
-            } else {
-                console.error("No DOM element with id 'plot' exists on the page.");
-            }
+
+
+
+
+
+            const data = [
+                {
+                    // UNTREATED
+                    x: xValues,
+                    y: Untreated.roi,
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: 'Untreated',
+                    line: { color: 'black', width: 3 },
+                    customdata: xValues.map((_, i) => [Untreated.revenue[i], Untreated.costAppliedN[i], Untreated.roi[i]]),
+                    hovertemplate: '+ Yield Revenue: $%{customdata[0]:.2f} $/ac<br>' +
+                        '- Cost of N: $%{customdata[1]:.2f} $/ac<br>' +
+                        '= ROI: $%{customdata[2]:.2f} $/ac<br>' +
+                        '<extra></extra>'
+                },
+                {
+                    // TREATED
+                    x: xValues,
+                    y: Treated.roi,
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: 'With SOURCE',
+                    line: { color: '#4CBB17', width: 3 },
+                    customdata: xValues.map((_, i) => [Treated.revenue[i], Treated.costAppliedN[i], Treated.costAppliedSource[i], Treated.roi[i]]),
+                    hovertemplate: '+ Yield Revenue: $%{customdata[0]:.2f} $/ac<br>' +
+                        '- Cost of N: $%{customdata[1]:.2f} $/ac<br>' +
+                        '- Cost of SOURCE: $%{customdata[2]:.2f} $/ac<br>' +
+                        '= ROI: $%{customdata[3]:.2f} $/ac<br>' +
+                        '<extra></extra>'
+                },
+                {
+                    x: [breakeven, breakeven],
+                    y: [Math.min(...Untreated.roi), Math.max(...Treated.roi)],
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: 'Break-even',
+                    line: { color: 'black', dash: 'dash' }
+                }
+            ];
+
+            // Use Plotly.react for efficient updates
+            breakevenMsg = breakeven < 299.5 ? `Break-even at ${breakeven.toFixed(1)} N/ac` : "Break-even out of range";
+            Plotly.react('plot', data, {
+                title: `ROI Curve (${breakevenMsg})`,
+                xaxis: { title: 'Applied N (lb/ac)' },
+                yaxis: { title: 'ROI ($/ac)' },
+                legend: {
+                    orientation: 'h',
+                    x: 0.5,
+                    y: -0.2,
+                    xanchor: 'center',
+                },
+                margin: {
+                    l: 50,
+                    r: 50,
+                    t: 50,
+                    b: 50
+                }
+            });
         }
+
+        //     // Ensure the 'plot' div exists before plotting
+        //     let plotElement = document.getElementById('plot');
+        //     if (plotElement) {
+        //         // Use Plotly.react for efficient updates
+        //         Plotly.react('plot', [
+        //             {
+        //                 x: xValues,
+        //                 y: roiTreated,
+        //                 type: 'scatter',
+        //                 mode: 'lines',
+        //                 name: 'With SOURCE',
+        //                 line: { color: 'black', width: 3 },
+        //                 hovertemplate:
+        //                     '+ Yield revenue: %{customdata[0]:.2f} $/ac<br>' +
+        //                     '- Cost of N: %{customdata[1]:.2f} $/ac<br>' +
+        //                     '= ROI: %{y[0]:.2f} $/ac<br>' +
+        //                     '<extra></extra>',
+        //                 customdata: xValues.map(x => [
+        //                     x,
+        //                     (userParams["costN"] * x),
+        //                 ])
+        //             },
+        //             {
+        //                 x: xValues,
+        //                 y: roiTreated,
+        //                 type: 'scatter',
+        //                 mode: 'lines',
+        //                 name: 'With SOURCE',
+        //                 line: { color: '#4CBB17', width: 3 },
+        //                 hovertemplate: 'Applied N: %{customdata[0]:.1f} lb/ac<br>' +
+        //                     'Cost of N: %{customdata[1]:.2f} $/ac<br>' +
+        //                     'Cost of SOURCE: %{customdata[2]:.2f} $/ac<br>' +
+        //                     'Total cost: %{customdata[3]:.2f} $/ac<br>' +
+        //                     '<extra></extra>',
+        //                 customdata: xValues.map(x => [
+        //                     x - userParams["NReduction"],
+        //                     (userParams["costN"] * (x - userParams["NReduction"])),
+        //                     (userParams["costSOURCE"]),
+        //                     (userParams["costN"] * (x - userParams["NReduction"]) + userParams["costSOURCE"]),
+        //                 ])
+        //             },
+        //             {
+        //                 x: [breakeven, breakeven],
+        //                 y: [Math.min(...roiUntreated), Math.max(...roiTreated)],
+        //                 type: 'scatter',
+        //                 mode: 'lines',
+        //                 name: 'Break-even',
+        //                 line: { color: 'grey', dash: 'dash' }
+        //             }
+        //         ], {
+        //             title: `ROI Curve (break-even at ${breakeven.toFixed(1)} N/ac)`,
+        //             xaxis: { title: 'Applied N on untreated (lb/ac)' },
+        //             yaxis: { title: 'ROI ($/ac)' },
+        //             legend: {
+        //                 orientation: 'h',
+        //                 x: 0.5,  // Center the legend
+        //                 y: -0.2, // Move the legend below the plot
+        //                 xanchor: 'center',
+        //                 yanchor: 'right',
+        //             },
+        //             margin: {
+        //                 l: 50, // left margin
+        //                 r: 50, // right margin
+        //                 t: 50, // top margin
+        //                 b: 50 // bottom margin to avoid overlap
+        //             }
+        //         }
+        //         );
+        //     } else {
+        //         console.error("No DOM element with id 'plot' exists on the page.");
+        //     }
+        // }
 
         // Ensure the page is fully loaded before rendering
         window.onload = function () {
