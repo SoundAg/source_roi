@@ -8,7 +8,6 @@
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/purecss@3.0.0/build/pure-min.css"
         integrity="sha384-X38yfunGUhNzHpBaEBsWLO+A0HDYOQi8ufWDkZ0k9e0eXz/tH3II7uKZ9msv++Ls" crossorigin="anonymous">
-    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 
     <style>
         body {
@@ -41,9 +40,14 @@
 
     <div>
         <p>This plot shows the estimated partial ROI against the amount of applied N.</p>
-        <p>The black line shows a full-nitrogen regimen, without SOURCE. The green line shows </p>
+        <p>The black line shows ROI for a full-nitrogen regimen, without SOURCE. The green line shows ROI for a
+            SOURCE-treated field, possibly with a reduction in N. These are made to be comparable, so if you have a
+            reduction of 25 lb/ac N, then the values at, say, 200 lbs/ac applied N represent 200 lbs/ac for the
+            untreated area and 175 lbs/ac + SOURCE in the treated area.</p>
         <p>You can change the parameters of the plot below.</p>
     </div>
+
+    <hr style="margin: 2rem;">
 
 
     <div id="plot"></div>
@@ -75,12 +79,26 @@
                 <option value="0">No reduction</option>
                 <option value="25">25 lbs/ac</option>
                 <option value="50">50 lbs/ac</option>
+            </select>
         </div>
 
     </div>
 
 
+    <hr style="margin: 2rem;">
 
+
+    <div>
+        <h3>Learnings</h3>
+        <p>In a yield-boosting application, at the prices suggested by Agronomy, SOURCE is helpful under 191 lbs/ac N. Beyond that, the extra N (be it from applied N or SOURCE N-equivalent) costs more than the return in yield, and ROI falls. This point happens in two different places for the treated and untreated lines -- about 24 lbs/ac N apart, as is the impact of SOURCE.</p>
+        <p>When reducing applied N by 25 lbs, at these price parameters, SOURCE doesn't win in a reasonable application range. Removing 25 lbs/ac N and adding SOURCE is like subtracting 25 lbs/ac and adding 24 lbs/ac back in. One less pound of N yields a tiny bit lower, and the price of SOURCE comes to $0.625/lb N, so it's just more expensive everywhere. If we decrease the price of SOURCE and increase that of N, SOURCE starts to win.</p>
+        <p>Reducing 50 lbs/ac N brings big savings in N, but SOURCE doesn't contribute enough N-equivalent to maintain yields until we're over 250 lbs/ac N applications. In this area, the 26 lbs/ac N deficiency between treated and untreated areas is not a big deal, and the savings from lower N costs take over.</p>
+    </div>
+
+
+
+
+    <script src="https://cdn.plot.ly/plotly-latest.min.js" defer></script>
 
     <script>
 
@@ -140,12 +158,12 @@
         // Static plotting data
         const xValues = Array.from({ length: (300 - 100) / 0.5 + 1 }, (_, i) => 100 + i * 0.5);
         const plotParams = {
-                intercept: 72.7,
-                gradient: 1.525,
-                transitionPoint: 39.5,
-                saturationRate: 49.25,
-                sourceNEquivalent: 24.0,
-            };
+            intercept: 72.7,
+            gradient: 1.525,
+            transitionPoint: 39.5,
+            saturationRate: 49.25,
+            sourceNEquivalent: 24.0,
+        };
 
         function updatePlot() {
             const priceCorn = parseFloat(document.getElementById('price-corn').value);
@@ -174,10 +192,7 @@
             let breakeven = findBreakeven(xValues, Untreated.roi, Treated.roi);
 
 
-
-
-
-
+            // Plot the data
             const data = [
                 {
                     // UNTREATED
@@ -219,7 +234,7 @@
             ];
 
             // Use Plotly.react for efficient updates
-            breakevenMsg = breakeven < 299.5 ? `Break-even at ${breakeven.toFixed(1)} N/ac` : "Break-even out of range";
+            breakevenMsg = breakeven < 299.5 ? `break-even at ${breakeven.toFixed(1)} N/ac` : "break-even out of range";
             Plotly.react('plot', data, {
                 title: `ROI Curve (${breakevenMsg})`,
                 xaxis: { title: 'Applied N (lb/ac)' },
@@ -234,95 +249,21 @@
                     l: 50,
                     r: 50,
                     t: 50,
-                    b: 50
+                    b: 100
                 }
             });
         }
 
-        //     // Ensure the 'plot' div exists before plotting
-        //     let plotElement = document.getElementById('plot');
-        //     if (plotElement) {
-        //         // Use Plotly.react for efficient updates
-        //         Plotly.react('plot', [
-        //             {
-        //                 x: xValues,
-        //                 y: roiTreated,
-        //                 type: 'scatter',
-        //                 mode: 'lines',
-        //                 name: 'With SOURCE',
-        //                 line: { color: 'black', width: 3 },
-        //                 hovertemplate:
-        //                     '+ Yield revenue: %{customdata[0]:.2f} $/ac<br>' +
-        //                     '- Cost of N: %{customdata[1]:.2f} $/ac<br>' +
-        //                     '= ROI: %{y[0]:.2f} $/ac<br>' +
-        //                     '<extra></extra>',
-        //                 customdata: xValues.map(x => [
-        //                     x,
-        //                     (userParams["costN"] * x),
-        //                 ])
-        //             },
-        //             {
-        //                 x: xValues,
-        //                 y: roiTreated,
-        //                 type: 'scatter',
-        //                 mode: 'lines',
-        //                 name: 'With SOURCE',
-        //                 line: { color: '#4CBB17', width: 3 },
-        //                 hovertemplate: 'Applied N: %{customdata[0]:.1f} lb/ac<br>' +
-        //                     'Cost of N: %{customdata[1]:.2f} $/ac<br>' +
-        //                     'Cost of SOURCE: %{customdata[2]:.2f} $/ac<br>' +
-        //                     'Total cost: %{customdata[3]:.2f} $/ac<br>' +
-        //                     '<extra></extra>',
-        //                 customdata: xValues.map(x => [
-        //                     x - userParams["NReduction"],
-        //                     (userParams["costN"] * (x - userParams["NReduction"])),
-        //                     (userParams["costSOURCE"]),
-        //                     (userParams["costN"] * (x - userParams["NReduction"]) + userParams["costSOURCE"]),
-        //                 ])
-        //             },
-        //             {
-        //                 x: [breakeven, breakeven],
-        //                 y: [Math.min(...roiUntreated), Math.max(...roiTreated)],
-        //                 type: 'scatter',
-        //                 mode: 'lines',
-        //                 name: 'Break-even',
-        //                 line: { color: 'grey', dash: 'dash' }
-        //             }
-        //         ], {
-        //             title: `ROI Curve (break-even at ${breakeven.toFixed(1)} N/ac)`,
-        //             xaxis: { title: 'Applied N on untreated (lb/ac)' },
-        //             yaxis: { title: 'ROI ($/ac)' },
-        //             legend: {
-        //                 orientation: 'h',
-        //                 x: 0.5,  // Center the legend
-        //                 y: -0.2, // Move the legend below the plot
-        //                 xanchor: 'center',
-        //                 yanchor: 'right',
-        //             },
-        //             margin: {
-        //                 l: 50, // left margin
-        //                 r: 50, // right margin
-        //                 t: 50, // top margin
-        //                 b: 50 // bottom margin to avoid overlap
-        //             }
-        //         }
-        //         );
-        //     } else {
-        //         console.error("No DOM element with id 'plot' exists on the page.");
-        //     }
-        // }
 
-        // Ensure the page is fully loaded before rendering
         window.onload = function () {
             const plotElement = document.getElementById('plot');
-
-            // Only proceed if the plot element exists
             if (plotElement) {
-                updatePlot();
+                updatePlot();  // Call your plot function only after everything is loaded
             } else {
                 console.error("Plot element not found on page load.");
             }
         };
+
 
     </script>
 
